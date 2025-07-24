@@ -1,0 +1,49 @@
+{
+  "providers": {
+    "gemini": {
+      "apiKey": "your-gemini-api-key-here",
+      "model": "gemini-2.0-flash",
+      "maxTokens": 4000,
+      "temperature": 0.7,
+      "baseURL": "https://generativelanguage.googleapis.com/v1beta"
+    },
+    "openai": {
+      "apiKey": "your-openai-api-key-here",
+      "model": "gpt-4",
+      "maxTokens": 4000,
+      "temperature": 0.7,
+      "baseURL": "https://api.openai.com/v1"
+    },
+    "claude": {
+      "apiKey": "your-claude-api-key-here",
+      "model": "claude-3-sonnet-20240229",
+      "maxTokens": 4000,
+      "temperature": 0.7,
+      "baseURL": "https://api.anthropic.com"
+    },
+    "local": {
+      "baseURL": "http://localhost:11434",
+      "model": "llama2",
+      "maxTokens": 4000,
+      "temperature": 0.7
+    }
+  },
+  "defaultProvider": "gemini",
+  "contextWindow": 8000,
+  "rateLimits": {
+    "requestsPerMinute": 60,
+    "tokensPerMinute": 90000,
+    "dailyLimit": 1000000
+  },
+  "prompts": {
+    "systemPrompt": "你是一个专业的小说写作助手，专门负责《龙渊谷变》这部修仙小说的创作。请保持人物性格一致，注意修炼等级的合理性，确保剧情连贯性。",
+    "chapterPrompt": "请根据以下大纲和要求，写作一个2000-3000字的章节：",
+    "qualityCheckPrompt": "请检查以下章节的质量，从文字流畅度、剧情连贯性、人物一致性等方面评分："
+  },
+  "settings": {
+    "enableStreaming": true,
+    "enableCache": true,
+    "retryAttempts": 3,
+    "timeout": 30000
+  }
+}

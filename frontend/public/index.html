@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#000000" />
+    <meta
+      name="description"
+      content="小说写作Agent - 《龙渊谷变》写作管理系统"
+    />
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+    <title>小说写作Agent - 《龙渊谷变》</title>
+    <style>
+      /* 加载动画 */
+      .loading-screen {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: #001529;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 9999;
+      }
+      
+      .loading-logo {
+        font-size: 48px;
+        color: #1890ff;
+        margin-bottom: 20px;
+      }
+      
+      .loading-text {
+        color: white;
+        font-size: 18px;
+        margin-bottom: 30px;
+      }
+      
+      .loading-spinner {
+        width: 40px;
+        height: 40px;
+        border: 4px solid #303030;
+        border-top: 4px solid #1890ff;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+      
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+    </style>
+  </head>
+  <body>
+    <noscript>您需要启用JavaScript才能运行此应用程序。</noscript>
+    <div id="loading" class="loading-screen">
+      <div class="loading-logo">🤖</div>
+      <div class="loading-text">小说写作Agent 正在启动...</div>
+      <div class="loading-spinner"></div>
+    </div>
+    <div id="root"></div>
+    <script>
+      // 隐藏加载屏幕
+      window.addEventListener('load', function() {
+        setTimeout(function() {
+          const loading = document.getElementById('loading');
+          if (loading) {
+            loading.style.opacity = '0';
+            setTimeout(function() {
+              loading.style.display = 'none';
+            }, 300);
+          }
+        }, 1000);
+      });
+    </script>
+  </body>
+</html>

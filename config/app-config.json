@@ -1,0 +1,33 @@
+{
+  "app": {
+    "name": "小说写作Agent",
+    "version": "1.0.0",
+    "description": "《龙渊谷变》写作管理系统"
+  },
+  "paths": {
+    "documentPath": "../documents",
+    "chapterPath": "../documents/chapters",
+    "backupPath": "../backups"
+  },
+  "writing": {
+    "autoSave": true,
+    "autoBackup": true,
+    "qualityThreshold": 0.8,
+    "maxChapterLength": 3000,
+    "minChapterLength": 2000,
+    "targetWordsPerDay": 3000
+  },
+  "ui": {
+    "theme": "dark",
+    "language": "zh-CN",
+    "autoRefresh": true,
+    "refreshInterval": 30000
+  },
+  "features": {
+    "enableAutoWriting": true,
+    "enableQualityCheck": true,
+    "enablePlotTracking": true,
+    "enableCharacterManagement": true,
+    "enableBackup": true
+  }
+}
