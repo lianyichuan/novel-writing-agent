@@ -250,7 +250,7 @@ export class LLMService {
     };
   }
 
-  private async sendRequest(provider: string, messages: ChatMessage[]): Promise<LLMResponse> {
+  async sendRequest(provider: string, messages: ChatMessage[]): Promise<LLMResponse> {
     const providerConfig = this.config.providers[provider];
     
     if (!providerConfig || !providerConfig.apiKey) {

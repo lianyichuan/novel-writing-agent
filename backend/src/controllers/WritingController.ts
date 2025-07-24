@@ -1,11 +1,14 @@
 import { Request, Response } from 'express';
 import { LLMService } from '../services/LLMService';
+import { DocumentAnalysisService } from '../services/DocumentAnalysisService';
 
 export class WritingController {
   private llmService: LLMService;
+  private analysisService: DocumentAnalysisService;
 
   constructor() {
     this.llmService = new LLMService();
+    this.analysisService = new DocumentAnalysisService();
   }
 
   generateOutline = async (req: Request, res: Response): Promise<void> => {
@@ -21,26 +24,100 @@ export class WritingController {
         return;
       }
 
-      // 模拟大纲生成
-      const outline = {
-        chapterNumber,
-        title: `第${chapterNumber}章：突破契机`,
-        summary: '主角在修炼中遇到瓶颈，通过师兄指导找到突破方法',
-        keyEvents: [
-          '发现修炼瓶颈',
-          '寻求师兄帮助',
-          '获得突破方法',
-          '开始新的修炼'
-        ],
-        characters: ['林逸', '张师兄'],
-        plotLines: ['主角成长线'],
-        wordCountTarget: 2500
-      };
+      console.log(`📝 开始生成第${chapterNumber}章大纲...`);
+
+      // 获取文档分析结果
+      const [characters, plots, authorControl, agentGuidance] = await Promise.all([
+        this.analysisService.extractCharactersFromDocument(),
+        this.analysisService.extractPlotsFromDocument(),
+        this.analysisService.analyzeAuthorControl(),
+        this.analysisService.getAgentGuidance()
+      ]);
+
+      // 构建智能提示词
+      const prompt = `
+作为《龙渊谷变》的写作助手，请为第${chapterNumber}章生成详细大纲。
+
+【当前人物状态】
+${characters.map(c => `- ${c.name}(${c.role}): ${c.description}, 当前状态: ${c.currentStatus || '未知'}`).join('\n')}
+
+【主线剧情进展】
+${plots.map(p => `- ${p.name}: 进度${p.progress}%, 状态: ${p.status}`).join('\n')}
+
+【作者意愿控制】
+- 当前重点: ${authorControl.currentFocus}
+- 写作指导: ${authorControl.writingGuidelines.join(', ')}
+- 限制条件: ${authorControl.restrictions.join(', ')}
+- 下章指导: ${authorControl.nextChapterGuidance}
+
+【特殊要求】
+${requirements || '无特殊要求'}
+
+请生成JSON格式的章节大纲：
+{
+  "chapterNumber": ${chapterNumber},
+  "title": "章节标题",
+  "summary": "章节概要",
+  "keyEvents": ["主要事件1", "主要事件2"],
+  "characters": ["涉及人物1", "涉及人物2"],
+  "plotLines": ["推进的剧情线1", "推进的剧情线2"],
+  "wordCountTarget": 预估字数,
+  "keyDialogues": ["重要对话场景1", "重要对话场景2"],
+  "conflictPoints": ["冲突点1", "冲突点2"],
+  "chapterGoal": "本章目标"
+}
+
+只返回JSON，不要其他文字。
+`;
+
+      const response = await this.llmService.sendRequest('gemini', [
+        { role: 'user', content: prompt }
+      ]);
+
+      let outline;
+      try {
+        outline = JSON.parse(response.content);
+        outline.generatedAt = new Date();
+        outline.basedOnDocuments = {
+          characters: characters.length,
+          plots: plots.length,
+          authorGuidance: authorControl.currentFocus
+        };
+
+        console.log(`✅ 成功生成第${chapterNumber}章大纲`);
+      } catch (parseError) {
+        console.error('❌ 解析大纲JSON失败，使用备用方案:', parseError);
+        // 备用方案：基于文档信息生成简单大纲
+        outline = {
+          chapterNumber,
+          title: `第${chapterNumber}章：${authorControl.currentFocus}`,
+          summary: authorControl.nextChapterGuidance,
+          keyEvents: ['根据作者意愿发展剧情'],
+          characters: characters.slice(0, 3).map(c => c.name),
+          plotLines: plots.filter(p => p.status === 'active').map(p => p.name),
+          wordCountTarget: 2500,
+          generatedAt: new Date(),
+          basedOnDocuments: {
+            characters: characters.length,
+            plots: plots.length,
+            authorGuidance: authorControl.currentFocus
+          }
+        };
+      }
 
       res.json({
         success: true,
         data: outline,
-        message: '生成章节大纲成功'
+        message: `基于文档分析成功生成第${chapterNumber}章大纲`,
+        meta: {
+          source: 'document_analysis',
+          documentsUsed: {
+            characters: characters.length,
+            plots: plots.length,
+            authorControl: true,
+            agentGuidance: true
+          }
+        }
       });
     } catch (error) {
       console.error('生成章节大纲失败:', error);
