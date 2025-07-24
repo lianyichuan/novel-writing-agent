@@ -1,6 +1,8 @@
 import axios from 'axios';
 import fs from 'fs-extra';
 import path from 'path';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 interface LLMConfig {
   providers: {
@@ -49,6 +51,8 @@ export class LLMService {
     totalTokens: number;
     dailyUsage: { [date: string]: number };
   };
+  private proxyAgent?: HttpsProxyAgent<string>;
+  private geminiClient?: GoogleGenerativeAI;
 
   constructor() {
     this.loadConfig();
@@ -57,6 +61,8 @@ export class LLMService {
       totalTokens: 0,
       dailyUsage: {}
     };
+    this.setupProxy();
+    this.setupGemini();
   }
 
   private loadConfig(): void {
@@ -68,15 +74,15 @@ export class LLMService {
       // 使用默认配置
       this.config = {
         providers: {
-          openai: {
-            apiKey: process.env.OPENAI_API_KEY || '',
-            model: 'gpt-4',
+          gemini: {
+            apiKey: process.env.GEMINI_API_KEY || '',
+            model: 'gemini-2.0-flash',
             maxTokens: 4000,
             temperature: 0.7,
-            baseURL: 'https://api.openai.com/v1'
+            baseURL: 'https://generativelanguage.googleapis.com/v1beta'
           }
         },
-        defaultProvider: 'openai',
+        defaultProvider: 'gemini',
         contextWindow: 8000,
         rateLimits: {
           requestsPerMinute: 60,
@@ -89,6 +95,89 @@ export class LLMService {
           qualityCheckPrompt: '请检查以下章节的质量：'
         }
       };
+    }
+  }
+
+  private setupProxy(): void {
+    // 设置代理，支持环境变量或默认使用7890端口
+    const proxyUrl = process.env.HTTP_PROXY || process.env.HTTPS_PROXY || 'http://127.0.0.1:7890';
+    this.proxyAgent = new HttpsProxyAgent(proxyUrl);
+    console.log(`🌐 代理设置: ${proxyUrl}`);
+  }
+
+  private setupGemini(): void {
+    try {
+      const geminiConfig = this.config.providers.gemini;
+      if (geminiConfig && geminiConfig.apiKey) {
+        // 创建自定义fetch函数，强制使用代理
+        const customFetch = async (url: string, options: any = {}) => {
+          const https = require('https');
+          const { URL } = require('url');
+
+          return new Promise((resolve, reject) => {
+            const parsedUrl = new URL(url);
+            const postData = options.body || '';
+
+            // 确保headers正确传递
+            const headers = {
+              'Content-Type': 'application/json',
+              ...options.headers
+            };
+
+            // 如果有body，设置Content-Length
+            if (postData) {
+              headers['Content-Length'] = Buffer.byteLength(postData);
+            }
+
+            const requestOptions = {
+              hostname: parsedUrl.hostname,
+              port: parsedUrl.port || 443,
+              path: parsedUrl.pathname + parsedUrl.search,
+              method: options.method || 'GET',
+              headers: headers,
+              agent: this.proxyAgent
+            };
+
+            console.log('🌐 使用代理请求:', parsedUrl.hostname, requestOptions.path);
+
+            const req = https.request(requestOptions, (res: any) => {
+              let data = '';
+              res.on('data', (chunk: any) => data += chunk);
+              res.on('end', () => {
+                console.log('📡 响应状态:', res.statusCode);
+                resolve({
+                  ok: res.statusCode >= 200 && res.statusCode < 300,
+                  status: res.statusCode,
+                  statusText: res.statusMessage,
+                  json: () => Promise.resolve(JSON.parse(data)),
+                  text: () => Promise.resolve(data)
+                });
+              });
+            });
+
+            req.on('error', (error: any) => {
+              console.error('❌ 请求错误:', error.message);
+              reject(error);
+            });
+
+            if (postData) {
+              req.write(postData);
+            }
+            req.end();
+          });
+        };
+
+        // 使用自定义fetch初始化Gemini客户端
+        this.geminiClient = new GoogleGenerativeAI(geminiConfig.apiKey);
+
+        // 替换全局fetch（如果Google SDK使用全局fetch）
+        (global as any).fetch = customFetch;
+
+        console.log('🤖 Gemini客户端初始化成功');
+        console.log('🌐 使用代理:', 'http://127.0.0.1:7890');
+      }
+    } catch (error) {
+      console.error('Gemini客户端初始化失败:', error);
     }
   }
 
@@ -207,7 +296,9 @@ export class LLMService {
         headers: {
           'Authorization': `Bearer ${config.apiKey}`,
           'Content-Type': 'application/json'
-        }
+        },
+        httpsAgent: this.proxyAgent,
+        proxy: false // 禁用axios内置代理，使用httpsAgent
       }
     );
 
@@ -231,58 +322,129 @@ export class LLMService {
 
   private async sendGeminiRequest(config: any, messages: ChatMessage[]): Promise<LLMResponse> {
     try {
-      // 转换消息格式为Gemini格式
-      const contents = messages
-        .filter(msg => msg.role !== 'system') // Gemini不支持system消息
-        .map(msg => ({
-          parts: [{ text: msg.content }]
-        }));
-
-      // 如果有system消息，将其添加到第一个用户消息前
-      const systemMessage = messages.find(msg => msg.role === 'system');
-      if (systemMessage && contents.length > 0) {
-        contents[0].parts[0].text = `${systemMessage.content}\n\n${contents[0].parts[0].text}`;
-      }
-
-      const response = await axios.post(
-        `${config.baseURL}/models/${config.model}:generateContent`,
-        {
-          contents,
-          generationConfig: {
-            temperature: config.temperature,
-            maxOutputTokens: config.maxTokens,
-          }
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'X-goog-api-key': config.apiKey
-          }
-        }
-      );
-
-      const candidate = response.data.candidates?.[0];
-      if (!candidate) {
-        throw new Error('Gemini API返回无效响应');
-      }
-
-      const content = candidate.content?.parts?.[0]?.text || '';
-      const usage = response.data.usageMetadata || {};
-
-      return {
-        content,
-        usage: {
-          promptTokens: usage.promptTokenCount || 0,
-          completionTokens: usage.candidatesTokenCount || 0,
-          totalTokens: usage.totalTokenCount || 0
-        },
-        model: config.model,
-        provider: 'gemini'
-      };
+      // 使用直接HTTP请求，绕过Google SDK
+      return await this.sendGeminiRequestDirect(config, messages);
     } catch (error: any) {
-      console.error('Gemini API请求失败:', error.response?.data || error.message);
-      throw new Error(`Gemini API请求失败: ${error.response?.data?.error?.message || error.message}`);
+      console.error('❌ Gemini API请求失败:', error.message);
+
+      // 提供更详细的错误信息
+      if (error.message.includes('API_KEY_INVALID')) {
+        throw new Error('Gemini API密钥无效，请检查配置');
+      } else if (error.message.includes('PERMISSION_DENIED')) {
+        throw new Error('Gemini API权限被拒绝，请检查API密钥权限');
+      } else if (error.message.includes('QUOTA_EXCEEDED')) {
+        throw new Error('Gemini API配额已用完');
+      } else if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+        throw new Error('网络连接失败，请检查代理设置或网络连接');
+      } else {
+        throw new Error(`Gemini API请求失败: ${error.message}`);
+      }
     }
+  }
+
+  private async sendGeminiRequestDirect(config: any, messages: ChatMessage[]): Promise<LLMResponse> {
+    const https = require('https');
+
+    return new Promise((resolve, reject) => {
+      // 转换消息格式
+      let prompt = '';
+      const systemMessage = messages.find(msg => msg.role === 'system');
+      const userMessages = messages.filter(msg => msg.role !== 'system');
+
+      // 如果有system消息，添加到prompt开头
+      if (systemMessage) {
+        prompt += `${systemMessage.content}\n\n`;
+      }
+
+      // 添加用户消息
+      userMessages.forEach(msg => {
+        if (msg.role === 'user') {
+          prompt += `${msg.content}\n`;
+        } else if (msg.role === 'assistant') {
+          prompt += `助手回复: ${msg.content}\n`;
+        }
+      });
+
+      // 构建请求体
+      const requestBody = JSON.stringify({
+        contents: [{
+          parts: [{
+            text: prompt
+          }]
+        }],
+        generationConfig: {
+          temperature: config.temperature || 0.7,
+          maxOutputTokens: config.maxTokens || 4000,
+        }
+      });
+
+      // 构建请求选项
+      const options = {
+        hostname: 'generativelanguage.googleapis.com',
+        port: 443,
+        path: `/v1beta/models/${config.model || 'gemini-2.0-flash'}:generateContent?key=${config.apiKey}`,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(requestBody)
+        },
+        agent: this.proxyAgent
+      };
+
+      console.log('🤖 发送Gemini直接请求...');
+      console.log('🌐 使用代理请求:', options.hostname, options.path.substring(0, 50) + '...');
+
+      const req = https.request(options, (res: any) => {
+        let data = '';
+
+        // 设置编码为UTF-8
+        res.setEncoding('utf8');
+
+        res.on('data', (chunk: any) => {
+          data += chunk;
+        });
+
+        res.on('end', () => {
+          console.log('📡 响应状态:', res.statusCode);
+
+          try {
+            if (res.statusCode === 200) {
+              const response = JSON.parse(data);
+              const content = response.candidates?.[0]?.content?.parts?.[0]?.text || '';
+              const usage = response.usageMetadata || {};
+
+              console.log('✅ Gemini响应成功');
+              console.log('📝 响应内容长度:', content.length);
+
+              resolve({
+                content,
+                usage: {
+                  promptTokens: usage.promptTokenCount || 0,
+                  completionTokens: usage.candidatesTokenCount || 0,
+                  totalTokens: usage.totalTokenCount || 0
+                },
+                model: config.model,
+                provider: 'gemini'
+              });
+            } else {
+              console.error('❌ API响应错误:', res.statusCode, data);
+              reject(new Error(`API请求失败: ${res.statusCode} ${data}`));
+            }
+          } catch (parseError: any) {
+            console.error('❌ 解析响应失败:', parseError.message);
+            reject(new Error(`响应解析失败: ${parseError.message}`));
+          }
+        });
+      });
+
+      req.on('error', (error: any) => {
+        console.error('❌ 请求错误:', error.message);
+        reject(error);
+      });
+
+      req.write(requestBody);
+      req.end();
+    });
   }
 
   private async checkRateLimit(): Promise<void> {
