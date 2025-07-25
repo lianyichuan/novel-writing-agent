@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { Card, Button, Progress, Timeline, Input, Select, Row, Col, message, Modal, Form } from 'antd';
-import { RobotOutlined, PlayCircleOutlined, PauseCircleOutlined, SettingOutlined, FileTextOutlined, CheckCircleOutlined } from '@ant-design/icons';
+import React, { useState, useEffect } from 'react';
+import { Card, Button, Progress, Timeline, Input, Select, Row, Col, message, Modal, Form, Badge, Tag } from 'antd';
+import { RobotOutlined, PlayCircleOutlined, PauseCircleOutlined, SettingOutlined, FileTextOutlined, CheckCircleOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useApp } from '../../store/AppContext';
 import { writingAPI, llmAPI } from '../../services/api';
 
@@ -14,7 +14,36 @@ const WritingAgent: React.FC = () => {
   const [currentTask, setCurrentTask] = useState<string>('');
   const [generatedContent, setGeneratedContent] = useState<string>('');
   const [showContentModal, setShowContentModal] = useState(false);
+  const [currentChapter, setCurrentChapter] = useState(38); // 从第38章开始
+  const [documentInfo, setDocumentInfo] = useState<any>(null);
   const [form] = Form.useForm();
+
+  // 获取文档信息
+  useEffect(() => {
+    const fetchDocumentInfo = async () => {
+      try {
+        const [charactersRes, plotsRes] = await Promise.all([
+          fetch('http://localhost:3001/api/characters'),
+          fetch('http://localhost:3001/api/plots')
+        ]);
+
+        const charactersData = await charactersRes.json();
+        const plotsData = await plotsRes.json();
+
+        if (charactersData.success && plotsData.success) {
+          setDocumentInfo({
+            characters: charactersData.data.length,
+            plots: plotsData.data.length,
+            lastUpdate: new Date().toLocaleString()
+          });
+        }
+      } catch (error) {
+        console.error('获取文档信息失败:', error);
+      }
+    };
+
+    fetchDocumentInfo();
+  }, []);
 
   const handleGenerateOutline = async () => {
     try {
@@ -143,7 +172,15 @@ const WritingAgent: React.FC = () => {
     <div className="content-container">
       <div className="page-header">
         <h1><RobotOutlined /> 写作Agent</h1>
-        <p>AI自动写作助手控制面板</p>
+        <p>基于《龙渊谷变》文档的AI智能写作助手</p>
+        {documentInfo && (
+          <div style={{ marginTop: 8, fontSize: '12px', color: '#666' }}>
+            <Badge status="success" text={`文档驱动`} />
+            <Tag color="blue" style={{ marginLeft: 8 }}>{documentInfo.characters}个人物</Tag>
+            <Tag color="green">{documentInfo.plots}条剧情线</Tag>
+            <span style={{ marginLeft: 16 }}>最后更新：{documentInfo.lastUpdate}</span>
+          </div>
+        )}
       </div>
 
       <div className={`writing-status ${isRunning ? '' : 'warning'}`}>
@@ -154,15 +191,15 @@ const WritingAgent: React.FC = () => {
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
           <Card title="写作控制" className="chart-container">
-            <Form form={form} layout="vertical" initialValues={{ chapterNumber: 157, wordCount: 2500 }}>
+            <Form form={form} layout="vertical" initialValues={{ chapterNumber: currentChapter, wordCount: 2500 }}>
               <Row gutter={16}>
                 <Col span={12}>
                   <Form.Item label="目标章节" name="chapterNumber">
                     <Select>
-                      <Option value={157}>第157章</Option>
-                      <Option value={158}>第158章</Option>
-                      <Option value={159}>第159章</Option>
-                      <Option value={160}>第160章</Option>
+                      <Option value={currentChapter}>第{currentChapter}章</Option>
+                      <Option value={currentChapter + 1}>第{currentChapter + 1}章</Option>
+                      <Option value={currentChapter + 2}>第{currentChapter + 2}章</Option>
+                      <Option value={currentChapter + 3}>第{currentChapter + 3}章</Option>
                     </Select>
                   </Form.Item>
                 </Col>

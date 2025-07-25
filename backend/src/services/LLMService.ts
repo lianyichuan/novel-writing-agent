@@ -190,6 +190,15 @@ export class LLMService {
     }
 
     try {
+      // 先检查代理状态（仅对Gemini）
+      if (providerName === 'gemini') {
+        const proxyStatus = await this.checkProxyStatus();
+        if (!proxyStatus.isUSLocation) {
+          console.warn(`⚠️ 代理未连接到美国节点 (当前: ${proxyStatus.country})，Gemini API可能无法使用`);
+          // 不直接返回false，而是继续尝试，让用户知道具体错误
+        }
+      }
+
       const response = await this.sendRequest(providerName, [
         { role: 'user', content: '测试连接' }
       ]);
@@ -197,6 +206,35 @@ export class LLMService {
     } catch (error) {
       console.error(`LLM连接测试失败 (${providerName}):`, error);
       return false;
+    }
+  }
+
+  private async checkProxyStatus(): Promise<{isUSLocation: boolean, currentIP: string, country: string}> {
+    try {
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+
+      // 检查当前IP
+      const { stdout: ipResult } = await execAsync('curl --proxy http://127.0.0.1:7890 -s --connect-timeout 5 https://httpbin.org/ip');
+      const ipData = JSON.parse(ipResult);
+
+      // 检查地理位置
+      const { stdout: geoResult } = await execAsync(`curl -s --connect-timeout 5 http://ip-api.com/json/${ipData.origin}`);
+      const geoData = JSON.parse(geoResult);
+
+      return {
+        isUSLocation: geoData.country === 'United States',
+        currentIP: ipData.origin,
+        country: geoData.country
+      };
+    } catch (error) {
+      console.error('代理状态检查失败:', error);
+      return {
+        isUSLocation: false,
+        currentIP: 'unknown',
+        country: 'unknown'
+      };
     }
   }
 
@@ -385,8 +423,10 @@ export class LLMService {
         path: `/v1beta/models/${config.model || 'gemini-2.0-flash'}:generateContent?key=${config.apiKey}`,
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(requestBody)
+          'Content-Type': 'application/json; charset=utf-8',
+          'Content-Length': Buffer.byteLength(requestBody, 'utf8'),
+          'Accept': 'application/json',
+          'Accept-Charset': 'utf-8'
         },
         agent: this.proxyAgent
       };
@@ -406,6 +446,7 @@ export class LLMService {
 
         res.on('end', () => {
           console.log('📡 响应状态:', res.statusCode);
+          console.log('🔍 原始响应数据长度:', data.length);
 
           try {
             if (res.statusCode === 200) {
@@ -415,6 +456,7 @@ export class LLMService {
 
               console.log('✅ Gemini响应成功');
               console.log('📝 响应内容长度:', content.length);
+              console.log('🔤 响应内容预览:', content.substring(0, 100));
 
               resolve({
                 content,
