@@ -28,7 +28,7 @@ interface SystemStats {
 }
 
 const Dashboard: React.FC = () => {
-  const { state } = useApp();
+  const { state, actions } = useApp();
   const [systemStats, setSystemStats] = useState<SystemStats>({
     totalChapters: 0,
     totalWords: 0,
@@ -56,6 +56,7 @@ const Dashboard: React.FC = () => {
   useEffect(() => {
     // 使用真实数据更新统计信息
     if (state.writingStats) {
+      console.log('📊 Dashboard更新统计数据:', state.writingStats);
       setSystemStats({
         totalChapters: state.writingStats.totalChapters,
         totalWords: state.writingStats.totalWords,
@@ -66,6 +67,22 @@ const Dashboard: React.FC = () => {
       });
     }
   }, [state.writingStats, state.characters, state.plots]);
+
+  // 定期刷新数据
+  useEffect(() => {
+    const refreshData = () => {
+      actions.loadWritingStats();
+      actions.loadCharacters();
+      actions.loadPlots();
+    };
+
+    // 立即执行一次
+    refreshData();
+
+    // 每30秒刷新一次
+    const interval = setInterval(refreshData, 30000);
+    return () => clearInterval(interval);
+  }, [actions]);
 
   const getProgressColor = (progress: number) => {
     if (progress >= 80) return '#52c41a';

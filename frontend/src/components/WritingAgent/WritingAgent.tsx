@@ -8,7 +8,7 @@ const { TextArea } = Input;
 const { Option } = Select;
 
 const WritingAgent: React.FC = () => {
-  const { state } = useApp();
+  const { state, actions } = useApp();
   const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress] = useState(0);
   const [currentTask, setCurrentTask] = useState<string>('');
@@ -18,17 +18,19 @@ const WritingAgent: React.FC = () => {
   const [documentInfo, setDocumentInfo] = useState<any>(null);
   const [form] = Form.useForm();
 
-  // 获取文档信息
+  // 获取文档信息和写作统计
   useEffect(() => {
     const fetchDocumentInfo = async () => {
       try {
-        const [charactersRes, plotsRes] = await Promise.all([
+        const [charactersRes, plotsRes, writingStatsRes] = await Promise.all([
           fetch('http://localhost:3001/api/characters'),
-          fetch('http://localhost:3001/api/plots')
+          fetch('http://localhost:3001/api/plots'),
+          fetch('http://localhost:3001/api/writing/stats')
         ]);
 
         const charactersData = await charactersRes.json();
         const plotsData = await plotsRes.json();
+        const writingStatsData = await writingStatsRes.json();
 
         if (charactersData.success && plotsData.success) {
           setDocumentInfo({
@@ -37,12 +39,23 @@ const WritingAgent: React.FC = () => {
             lastUpdate: new Date().toLocaleString()
           });
         }
+
+        // 强制更新写作统计数据
+        if (writingStatsData.success) {
+          console.log('📊 获取到写作统计数据:', writingStatsData.data);
+          // 使用actions来正确更新状态
+          actions.loadWritingStats();
+        }
       } catch (error) {
         console.error('获取文档信息失败:', error);
       }
     };
 
     fetchDocumentInfo();
+
+    // 定期刷新数据
+    const interval = setInterval(fetchDocumentInfo, 30000); // 每30秒刷新一次
+    return () => clearInterval(interval);
   }, []);
 
   const handleGenerateOutline = async () => {
